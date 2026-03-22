@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { ResumeUploadDropzone } from "./resume-upload-dropzone";
 import { analyzeResume } from "@/lib/api";
-import type { DossierReport } from "@/lib/types";
+import type { PrepLensReportV2 } from "@/lib/types";
 
 interface FormErrors {
   company_name?: string;
@@ -73,7 +73,7 @@ export function BriefForm() {
       clearInterval(stepTimer);
 
       // Store the report in sessionStorage and navigate to results
-      const report = data.report as DossierReport;
+      const report = data.report as PrepLensReportV2;
       sessionStorage.setItem("preplens_report", JSON.stringify(report));
       router.push("/results");
     } catch (err) {
