@@ -1,40 +1,15 @@
 import io
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models.report_schema import DossierReport
+from app.models.report_schema import PrepLensReportV2
+from tests.sample_v2 import SAMPLE_REPORT_V2
 
 client = TestClient(app)
 
-SAMPLE_REPORT = DossierReport(
-    report_meta={
-        "company_name": "TestCo",
-        "job_title": "Engineer",
-        "generated_at": "2026-03-22T00:00:00Z",
-        "version": "1.0",
-    },
-    role_summary="A test role summary.",
-    hiring_priorities=["Priority 1", "Priority 2"],
-    candidate_strengths=["Strength 1"],
-    candidate_concerns=[
-        {"concern": "Gap 1", "severity": "medium", "mitigation": "Mitigate it"}
-    ],
-    likely_interview_questions=[
-        {"question": "Tell me about X?", "why_they_might_ask": "To assess X"}
-    ],
-    reverse_interview_questions=[
-        {
-            "audience": "Hiring Manager",
-            "question": "How is success measured?",
-            "why_it_matters": "Clarity on expectations",
-        }
-    ],
-    positioning_strategy=["Lead with X"],
-    red_flags_or_unknowns=["Vague scope"],
-    prep_checklist=["Research the team"],
-)
+SAMPLE_REPORT = PrepLensReportV2.model_validate(SAMPLE_REPORT_V2)
 
 
 def _make_pdf_bytes():
@@ -100,5 +75,7 @@ def test_analyze_success(mock_gen):
     assert response.status_code == 200
     data = response.json()
     assert "report" in data
-    assert data["report"]["report_meta"]["company_name"] == "TestCo"
+    assert data["report"]["schema_version"] == "2.0"
+    assert data["report"]["input_summary"]["company_name"] == "TestCo"
+    assert data["report"]["pursuit_recommendation"]["overall_fit_score"] >= 0
     assert len(data["report"]["hiring_priorities"]) > 0
