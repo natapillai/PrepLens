@@ -13,7 +13,7 @@ export async function analyzeResume(formData: FormData) {
 }
 
 export async function exportDossier(
-  report: Record<string, unknown>,
+  report: unknown,
   format: "pdf" | "docx"
 ) {
   const res = await fetch(`${API_BASE}/api/v1/export/${format}`, {
