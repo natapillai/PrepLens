@@ -1,7 +1,12 @@
+import logging
+
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 
 from app.core.config import settings
 from app.services.resume_parser import extract_text_from_pdf
+from app.services.report_generator import generate_dossier
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -54,10 +59,21 @@ async def analyze(
     except Exception:
         raise HTTPException(status_code=422, detail="Failed to parse the resume PDF.")
 
-    # Placeholder: will call AI service in Milestone 3
-    return {
-        "status": "parsed",
-        "resume_text_length": len(resume_text),
-        "company_name": company_name.strip(),
-        "job_title": job_title.strip(),
-    }
+    # Generate dossier via AI
+    try:
+        report = generate_dossier(
+            company_name=company_name.strip(),
+            job_title=job_title.strip(),
+            job_description=job_description.strip(),
+            resume_text=resume_text,
+            recruiter_notes=recruiter_notes.strip(),
+            company_notes=company_notes.strip(),
+        )
+    except RuntimeError as e:
+        logger.error("Dossier generation failed: %s", str(e))
+        raise HTTPException(status_code=502, detail="Failed to generate the strategy brief. Please try again.")
+    except Exception as e:
+        logger.error("Unexpected error during generation: %s", str(e))
+        raise HTTPException(status_code=500, detail="An unexpected error occurred.")
+
+    return {"report": report.model_dump()}
