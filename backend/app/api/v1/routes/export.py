@@ -15,8 +15,8 @@ async def export_docx(request: ExportRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"DOCX export failed: {str(e)}")
 
-    company = request.report.report_meta.company_name.replace(" ", "_")
-    role = request.report.report_meta.job_title.replace(" ", "_")
+    company = request.report.input_summary.company_name.replace(" ", "_")
+    role = request.report.input_summary.job_title.replace(" ", "_")
     filename = f"PrepLens_{company}_{role}.docx"
 
     return Response(
@@ -33,8 +33,8 @@ async def export_pdf(request: ExportRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF export failed: {str(e)}")
 
-    company = request.report.report_meta.company_name.replace(" ", "_")
-    role = request.report.report_meta.job_title.replace(" ", "_")
+    company = request.report.input_summary.company_name.replace(" ", "_")
+    role = request.report.input_summary.job_title.replace(" ", "_")
     filename = f"PrepLens_{company}_{role}.pdf"
 
     return Response(

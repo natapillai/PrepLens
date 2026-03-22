@@ -1,11 +1,16 @@
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from openai import OpenAI
 
 from app.core.config import settings
-from app.models.report_schema import DossierReport, ReportMeta
+from app.models.report_schema import (
+    PrepLensReportV2,
+    InputSummary,
+    ExportMetadata,
+)
 from app.prompts.report_prompt import SYSTEM_PROMPT, build_user_prompt
 
 logger = logging.getLogger(__name__)
@@ -18,8 +23,8 @@ def generate_dossier(
     resume_text: str,
     recruiter_notes: str = "",
     company_notes: str = "",
-) -> DossierReport:
-    """Call the OpenAI API to generate a structured dossier report."""
+) -> PrepLensReportV2:
+    """Call the OpenAI API to generate a structured V2 dossier report."""
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     user_prompt = build_user_prompt(
@@ -30,6 +35,8 @@ def generate_dossier(
         recruiter_notes=recruiter_notes,
         company_notes=company_notes,
     )
+
+    now = datetime.now(timezone.utc)
 
     # Try up to 2 times (initial + 1 retry)
     last_error = None
@@ -51,15 +58,30 @@ def generate_dossier(
 
             data = json.loads(raw_content)
 
-            # Attach metadata
-            data["report_meta"] = {
+            # Attach metadata that the model doesn't generate
+            data["schema_version"] = "2.0"
+            data["generated_at"] = now.isoformat()
+            data["report_id"] = str(uuid.uuid4())
+            data["product_name"] = "PrepLens"
+            data["input_summary"] = {
                 "company_name": company_name,
                 "job_title": job_title,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "version": "1.0",
+                "job_posting_url": None,
+                "resume_filename": None,
+                "candidate_notes_present": bool(
+                    recruiter_notes.strip() or company_notes.strip()
+                ),
+                "job_description_present": True,
+                "job_description_length": len(job_description),
+            }
+            data["export_metadata"] = {
+                "export_title": f"PrepLens Strategy Brief — {company_name}",
+                "export_subtitle": job_title,
+                "export_date": now.strftime("%Y-%m-%d"),
+                "branding": "PrepLens",
             }
 
-            report = DossierReport.model_validate(data)
+            report = PrepLensReportV2.model_validate(data)
             return report
 
         except Exception as e:
