@@ -114,7 +114,10 @@ export default function ResultsPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <span className="hidden md:inline text-xs text-muted-foreground">
+              Exports include Score Methodology appendix
+            </span>
             <button
               onClick={() => handleExport("docx")}
               disabled={exporting !== null}

@@ -343,6 +343,10 @@ def generate_docx(report: PrepLensReportV2) -> bytes:
     for item in report.prep_checklist:
         doc.add_paragraph(f"☐  {item.item}")
 
+    # ── SCORING APPENDIX ──
+    if report.scoring:
+        _build_scoring_appendix(doc, report.scoring)
+
     # ── FOOTER ──
     doc.add_paragraph()
     _add_divider(doc)
@@ -412,3 +416,216 @@ def _add_divider(doc: Document):
     run = p.add_run("─" * 80)
     run.font.size = Pt(6)
     run.font.color.rgb = LIGHT_BORDER
+
+
+# ── Category label mapping ──
+_CAT_LABELS_SHORT = {
+    "hard_skill": "Hard Skill",
+    "soft_skill": "Soft Skill",
+    "domain_knowledge": "Domain",
+    "tool_or_technology": "Tool/Tech",
+    "education": "Education",
+}
+
+_MATCH_COLORS = {"direct": EMERALD, "partial": AMBER, "none": RED}
+_MATCH_ICONS = {"direct": "DIRECT", "partial": "PARTIAL", "none": "NONE"}
+
+
+def _build_scoring_appendix(doc: Document, scoring: dict):
+    """Build the Score Methodology appendix in the DOCX."""
+
+    doc.add_page_break()
+    _add_divider(doc)
+
+    # Title
+    title = doc.add_paragraph()
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = title.add_run("Appendix: Score Methodology")
+    run.font.size = Pt(22)
+    run.font.color.rgb = INDIGO
+    run.bold = True
+
+    subtitle = doc.add_paragraph()
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = subtitle.add_run(
+        "Transparent, ATS-style scoring breakdown — every score is traceable to evidence."
+    )
+    run.font.size = Pt(9)
+    run.font.color.rgb = MUTED
+
+    _add_divider(doc)
+
+    # -- Overall Score --
+    _section(doc, "Overall Score")
+    fit_score = scoring.get("overall_fit_score", 0)
+    fit_pct = scoring.get("overall_fit_percentage", 0)
+    earned = scoring.get("total_earned_points", 0)
+    max_pts = scoring.get("total_max_points", 0)
+
+    p = doc.add_paragraph()
+    run = p.add_run(f"Overall Fit: {fit_score}/10")
+    run.bold = True
+    run.font.color.rgb = _score_color(fit_score)
+    p.add_run(f"  ({fit_pct}% match)").font.color.rgb = DARK
+
+    _kv(doc, "Total Points", f"{earned} earned out of {max_pts} possible")
+    _detail(doc,
+        "Score = weighted sum of category scores. Each category is scored independently "
+        "based on keyword matching between the job description and resume, then weighted "
+        "by the category's importance for this specific role."
+    )
+
+    # -- Confidence --
+    confidence = scoring.get("confidence", {})
+    if confidence:
+        _section(doc, "Confidence Score")
+        conf_overall = confidence.get("overall_confidence", 0)
+        p = doc.add_paragraph()
+        run = p.add_run(f"Overall Confidence: {conf_overall}/10")
+        run.bold = True
+        run.font.color.rgb = _score_color(conf_overall)
+
+        for factor, label in [
+            ("jd_specificity", "Job Description Specificity"),
+            ("resume_detail", "Resume Detail Level"),
+            ("match_clarity", "Match Clarity"),
+        ]:
+            score_val = confidence.get(factor, 0)
+            reasoning = confidence.get(f"{factor}_reasoning", "")
+            p = doc.add_paragraph()
+            run = p.add_run(f"{label}: {score_val}/10")
+            run.bold = True
+            run.font.color.rgb = _score_color(score_val)
+            _detail(doc, reasoning)
+
+    # -- Category Breakdown Table --
+    category_scores = scoring.get("category_scores", [])
+    if category_scores:
+        _section(doc, "Category Breakdown")
+        _detail(doc,
+            "Each category is weighted based on what the job description emphasizes. "
+            "The weighted contribution shows how much each category affects the overall score."
+        )
+
+        table = doc.add_table(rows=1 + len(category_scores), cols=5)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header
+        headers = ["Category", "Score", "Match %", "Weight", "Contribution"]
+        for i, h in enumerate(headers):
+            cell = table.cell(0, i)
+            p = cell.paragraphs[0]
+            run = p.add_run(h)
+            run.bold = True
+            run.font.size = Pt(9)
+            run.font.color.rgb = DARK
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Light background for header
+            shading = cell._element.get_or_add_tcPr()
+            shading_elm = shading.makeelement(qn("w:shd"), {
+                qn("w:fill"): "E0E7FF",
+                qn("w:val"): "clear",
+            })
+            shading.append(shading_elm)
+
+        for row_idx, cs in enumerate(category_scores, start=1):
+            vals = [
+                cs.get("category_label", cs["category"]),
+                f'{cs["score_out_of_10"]}/10',
+                f'{cs["percentage"]}%',
+                f'{cs["category_weight"]}',
+                f'{cs["weighted_contribution"]}',
+            ]
+            for col_idx, val in enumerate(vals):
+                cell = table.cell(row_idx, col_idx)
+                p = cell.paragraphs[0]
+                run = p.add_run(val)
+                run.font.size = Pt(9)
+                if col_idx == 1:
+                    run.font.color.rgb = _score_color(cs["score_out_of_10"])
+                    run.bold = True
+                else:
+                    run.font.color.rgb = DARK
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER if col_idx > 0 else WD_ALIGN_PARAGRAPH.LEFT
+
+    # -- Requirements Breakdown Table --
+    scored_reqs = scoring.get("scored_requirements", [])
+    if scored_reqs:
+        _section(doc, "Detailed Requirements Breakdown")
+        _detail(doc,
+            "Every requirement extracted from the job description, matched against your resume. "
+            "Weight: Required (5), Preferred (3), Nice-to-have (1)."
+        )
+
+        table = doc.add_table(rows=1 + len(scored_reqs), cols=5)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        headers = ["Requirement", "Category", "Importance", "Match", "Points"]
+        for i, h in enumerate(headers):
+            cell = table.cell(0, i)
+            p = cell.paragraphs[0]
+            run = p.add_run(h)
+            run.bold = True
+            run.font.size = Pt(9)
+            run.font.color.rgb = DARK
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            shading = cell._element.get_or_add_tcPr()
+            shading_elm = shading.makeelement(qn("w:shd"), {
+                qn("w:fill"): "E0E7FF",
+                qn("w:val"): "clear",
+            })
+            shading.append(shading_elm)
+
+        for row_idx, req in enumerate(scored_reqs, start=1):
+            m_level = req.get("match_level", "none")
+            vals = [
+                req["keyword"],
+                _CAT_LABELS_SHORT.get(req["category"], req["category"]),
+                req["importance"].replace("_", " ").title(),
+                _MATCH_ICONS.get(m_level, m_level),
+                f'{req["earned_points"]}/{req["max_points"]}',
+            ]
+            for col_idx, val in enumerate(vals):
+                cell = table.cell(row_idx, col_idx)
+                p = cell.paragraphs[0]
+                run = p.add_run(val)
+                run.font.size = Pt(9)
+                if col_idx == 3:
+                    run.font.color.rgb = _MATCH_COLORS.get(m_level, MUTED)
+                    run.bold = True
+                else:
+                    run.font.color.rgb = DARK
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER if col_idx > 0 else WD_ALIGN_PARAGRAPH.LEFT
+
+    # -- Match Evidence --
+    if scored_reqs:
+        _section(doc, "Match Evidence")
+        _detail(doc, "Detailed justification for each requirement match.")
+
+        for req in scored_reqs:
+            m_level = req.get("match_level", "none")
+            p = doc.add_paragraph()
+            run = p.add_run(f'{req["keyword"]} — ')
+            run.bold = True
+            run.font.color.rgb = DARK
+            run2 = p.add_run(m_level.upper())
+            run2.bold = True
+            run2.font.color.rgb = _MATCH_COLORS.get(m_level, MUTED)
+            _detail(doc, f"Evidence: {req.get('resume_evidence', 'N/A')}")
+            _detail(doc, f"Reasoning: {req.get('match_reasoning', 'N/A')}")
+
+    # -- Top Improvements --
+    improvements = scoring.get("top_improvements", [])
+    if improvements:
+        _section(doc, "Top Score Improvements")
+        _detail(doc, "Changes that would have the biggest impact on your overall score.")
+
+        for imp in improvements:
+            p = doc.add_paragraph()
+            run = p.add_run(
+                f'{imp["keyword"]} — +{imp["potential_points"]} pts '
+                f'({imp["percentage_impact"]}% impact)'
+            )
+            run.bold = True
+            run.font.color.rgb = DARK
+            _detail(doc, imp["suggestion"])

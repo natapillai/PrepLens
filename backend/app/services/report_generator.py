@@ -12,6 +12,7 @@ from app.models.report_schema import (
     ExportMetadata,
 )
 from app.prompts.report_prompt import SYSTEM_PROMPT, build_user_prompt
+from app.services.scoring_service import compute_scores
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,32 @@ def generate_dossier(
     recruiter_notes: str = "",
     company_notes: str = "",
 ) -> PrepLensReportV2:
-    """Call the OpenAI API to generate a structured V2 dossier report."""
+    """Call the OpenAI API to generate a structured V2 dossier report.
+
+    Pipeline:
+    1. Run ATS-style scoring (extract requirements, match, compute scores)
+    2. Feed computed scores into the dossier prompt so the LLM uses them
+    3. Generate the full dossier with evidence-backed scores
+    """
+    # Step 1: Compute ATS-style scores
+    logger.info("Starting ATS-style scoring pipeline...")
+    try:
+        scoring_result = compute_scores(
+            job_description=job_description,
+            resume_text=resume_text,
+        )
+        scoring_data = scoring_result.model_dump()
+        logger.info(
+            "Scoring complete: overall_fit=%.1f, confidence=%.1f",
+            scoring_result.overall_fit_score,
+            scoring_result.confidence.overall_confidence,
+        )
+    except Exception as e:
+        logger.warning("Scoring pipeline failed, falling back to LLM-only: %s", str(e))
+        scoring_result = None
+        scoring_data = None
+
+    # Step 2: Build the dossier prompt, injecting computed scores
     client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
     user_prompt = build_user_prompt(
@@ -34,6 +60,7 @@ def generate_dossier(
         resume_text=resume_text,
         recruiter_notes=recruiter_notes,
         company_notes=company_notes,
+        scoring_result=scoring_result,
     )
 
     now = datetime.now(timezone.utc)
@@ -80,6 +107,18 @@ def generate_dossier(
                 "export_date": now.strftime("%Y-%m-%d"),
                 "branding": "PrepLens",
             }
+
+            # Override LLM scores with computed scores
+            if scoring_result:
+                data["pursuit_recommendation"]["overall_fit_score"] = round(
+                    scoring_result.overall_fit_score
+                )
+                data["pursuit_recommendation"]["confidence_score"] = round(
+                    scoring_result.confidence.overall_confidence
+                )
+
+            # Attach full scoring breakdown
+            data["scoring"] = scoring_data
 
             report = PrepLensReportV2.model_validate(data)
             return report

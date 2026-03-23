@@ -76,6 +76,24 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Disclaimer */}
+      <section className="mx-auto max-w-3xl px-6 pb-16">
+        <div className="rounded-xl border border-border bg-secondary/50 p-6 text-center">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            <span className="font-semibold text-foreground">A note on accuracy:</span>{" "}
+            PrepLens uses AI to analyze your resume against job descriptions. Scores
+            and recommendations are generated through keyword matching and language
+            model analysis — they are not a guarantee of interview outcomes. Use this
+            as a preparation tool, not a prediction. Always apply your own judgment.
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Exported reports (PDF &amp; DOCX) include a full{" "}
+            <span className="font-medium">Score Methodology appendix</span> showing
+            exactly how every score was calculated — requirement by requirement.
+          </p>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
         PrepLens &copy; {new Date().getFullYear()}. Built for candidates who

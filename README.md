@@ -55,8 +55,16 @@ cp .env.example .env
 
 ```bash
 cd backend
+python -m venv venv
+
+# Activate the virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 ### 3. Frontend

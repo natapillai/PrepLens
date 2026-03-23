@@ -13,8 +13,10 @@ Rules:
 - Keep outputs concise and actionable. Avoid generic filler.
 - Each section should provide practical value.
 - Questions should feel realistic for the specific role and company.
+- IMPORTANT: If pre-computed ATS scores are provided in the input, you MUST use the exact overall_fit_score and confidence_score values provided. Do NOT override them with your own estimates. These scores are computed from a deterministic keyword-matching pipeline.
+- Use the pre-computed category breakdown and match data to inform your fit_analysis section. Align your strong_fit_signals, partial_fit_signals, and missing_or_weak_signals with the keyword match results.
 - Use scoring conventions consistently:
-  - overall_fit_score and confidence_score: 0-10 scale
+  - overall_fit_score and confidence_score: 0-10 scale (use pre-computed values)
   - importance_score for priorities: 1-5 scale
   - strength_score for fit signals: 1-10 scale
 - Return ONLY valid JSON. No markdown. No code fences. No commentary outside the JSON."""
@@ -240,12 +242,19 @@ def build_user_prompt(
     resume_text: str,
     recruiter_notes: str = "",
     company_notes: str = "",
+    scoring_result=None,
 ) -> str:
     notes_parts = []
     if recruiter_notes.strip():
         notes_parts.append(f"## Recruiter Notes\n{recruiter_notes.strip()}")
     if company_notes.strip():
         notes_parts.append(f"## Company Notes\n{company_notes.strip()}")
+
+    # Inject computed scores so the LLM uses them instead of guessing
+    if scoring_result is not None:
+        scoring_section = _format_scoring_context(scoring_result)
+        notes_parts.append(scoring_section)
+
     notes_section = "\n\n".join(notes_parts) if notes_parts else ""
 
     return USER_PROMPT_TEMPLATE.format(
@@ -255,3 +264,43 @@ def build_user_prompt(
         resume_text=resume_text,
         notes_section=notes_section,
     )
+
+
+def _format_scoring_context(scoring_result) -> str:
+    """Format the scoring result as context for the dossier prompt."""
+    lines = [
+        "## Pre-Computed ATS Scoring (USE THESE SCORES)",
+        "The following scores were computed via keyword extraction and matching.",
+        "You MUST use these exact values for overall_fit_score and confidence_score.",
+        "Use the category breakdown to inform your fit_analysis and hiring_priorities.",
+        "",
+        f"Overall Fit Score: {scoring_result.overall_fit_score}/10",
+        f"Overall Match: {scoring_result.overall_fit_percentage}%",
+        f"Confidence Score: {scoring_result.confidence.overall_confidence}/10",
+        "",
+        "### Category Breakdown",
+    ]
+
+    for cs in scoring_result.category_scores:
+        lines.append(
+            f"- {cs.category_label}: {cs.score_out_of_10}/10 "
+            f"({cs.percentage}% match, weight={cs.category_weight})"
+        )
+
+    lines.append("")
+    lines.append("### Key Matches")
+    for req in scoring_result.scored_requirements:
+        icon = {"direct": "✓", "partial": "~", "none": "✗"}.get(req.match_level, "?")
+        lines.append(
+            f"- [{icon}] {req.keyword} ({req.importance}): "
+            f"{req.match_level} — {req.resume_evidence}"
+        )
+
+    lines.append("")
+    lines.append("### Top Improvement Opportunities")
+    for imp in scoring_result.top_improvements:
+        lines.append(
+            f"- {imp.keyword}: +{imp.potential_points}pts ({imp.percentage_impact}% impact) — {imp.suggestion}"
+        )
+
+    return "\n".join(lines)

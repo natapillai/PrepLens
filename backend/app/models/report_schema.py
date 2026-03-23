@@ -223,11 +223,14 @@ class PrepLensReportV2(BaseModel):
     interview_rounds: list[InterviewRound] = []
     likely_interview_questions: list[InterviewQuestion] = []
     reverse_interview_questions: list[ReverseInterviewQuestion] = []
-    logistics_and_constraints: LogisticsAndConstraints
-    red_flags_and_unknowns: RedFlagsAndUnknowns
+    logistics_and_constraints: LogisticsAndConstraints = LogisticsAndConstraints()
+    red_flags_and_unknowns: RedFlagsAndUnknowns = RedFlagsAndUnknowns()
     immediate_next_actions: list[ImmediateNextAction] = []
     prep_checklist: list[PrepChecklistItem] = []
     export_metadata: ExportMetadata = ExportMetadata()
+
+    # ATS-style scoring breakdown (populated by scoring service)
+    scoring: dict | None = None
 
 
 # --- API wrappers ---

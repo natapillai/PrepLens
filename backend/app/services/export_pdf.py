@@ -412,6 +412,10 @@ def generate_pdf(report: PrepLensReportV2) -> bytes:
     for item in report.prep_checklist:
         el.append(Paragraph(f"[ ]  {item.item}", styles["Body"]))
 
+    # ── SCORING APPENDIX ──
+    if report.scoring:
+        _build_scoring_appendix(el, report.scoring, styles, section, sub, body, bold, detail, bullet, kv, spacer)
+
     # ── FOOTER ──
     el.append(Spacer(1, 28))
     el.append(HRFlowable(width="100%", color=BORDER, thickness=0.5))
@@ -423,3 +427,206 @@ def generate_pdf(report: PrepLensReportV2) -> bytes:
 
     doc.build(el)
     return buffer.getvalue()
+
+
+def _build_scoring_appendix(el, scoring, styles, section, sub, body, bold, detail, bullet, kv, spacer):
+    """Build the Score Methodology appendix page."""
+
+    el.append(PageBreak())
+    el.append(HRFlowable(width="100%", color=PRIMARY, thickness=1.5))
+    el.append(Spacer(1, 6))
+    el.append(Paragraph("Appendix: Score Methodology", styles["DocTitle"]))
+    el.append(Paragraph(
+        "Transparent, ATS-style scoring breakdown — every score is traceable to evidence.",
+        styles["DocMeta"],
+    ))
+    el.append(HRFlowable(width="100%", color=PRIMARY, thickness=1.5))
+    el.append(Spacer(1, 10))
+
+    # -- Overall Score Summary --
+    section("Overall Score")
+    fit_score = scoring.get("overall_fit_score", 0)
+    fit_pct = scoring.get("overall_fit_percentage", 0)
+    earned = scoring.get("total_earned_points", 0)
+    max_pts = scoring.get("total_max_points", 0)
+
+    body(
+        f'<b>Overall Fit: <font color="{_score_color(fit_score)}">'
+        f"{fit_score}/10</font></b> ({fit_pct}% match)"
+    )
+    body(f"Total Points: {earned} earned out of {max_pts} possible")
+    body(
+        "Score = weighted sum of category scores. Each category is scored independently "
+        "based on keyword matching between the job description and resume, then weighted "
+        "by the category's importance for this specific role."
+    )
+    spacer(6)
+
+    # -- Confidence Breakdown --
+    confidence = scoring.get("confidence", {})
+    if confidence:
+        section("Confidence Score")
+        conf_overall = confidence.get("overall_confidence", 0)
+        body(
+            f'<b>Overall Confidence: <font color="{_score_color(conf_overall)}">'
+            f"{conf_overall}/10</font></b>"
+        )
+        spacer(4)
+
+        for factor, label in [
+            ("jd_specificity", "Job Description Specificity"),
+            ("resume_detail", "Resume Detail Level"),
+            ("match_clarity", "Match Clarity"),
+        ]:
+            score_val = confidence.get(factor, 0)
+            reasoning = confidence.get(f"{factor}_reasoning", "")
+            color = _score_color(score_val)
+            bold(f'{label}: <font color="{color}">{score_val}/10</font>')
+            detail(reasoning)
+            spacer(4)
+
+    # -- Category Breakdown --
+    category_scores = scoring.get("category_scores", [])
+    if category_scores:
+        section("Category Breakdown")
+        body(
+            "Each category is weighted based on what the job description emphasizes. "
+            "The weighted contribution shows how much each category affects the overall score."
+        )
+        spacer(6)
+
+        # Category summary table
+        cat_header = [
+            Paragraph("<b>Category</b>", styles["Body"]),
+            Paragraph("<b>Score</b>", styles["Body"]),
+            Paragraph("<b>Match %</b>", styles["Body"]),
+            Paragraph("<b>Weight</b>", styles["Body"]),
+            Paragraph("<b>Contribution</b>", styles["Body"]),
+        ]
+        cat_rows = [cat_header]
+        for cs in category_scores:
+            color = _score_color(cs["score_out_of_10"])
+            cat_rows.append([
+                Paragraph(cs.get("category_label", cs["category"]), styles["Body"]),
+                Paragraph(
+                    f'<font color="{color}"><b>{cs["score_out_of_10"]}/10</b></font>',
+                    styles["Body"],
+                ),
+                Paragraph(f'{cs["percentage"]}%', styles["Body"]),
+                Paragraph(f'{cs["category_weight"]}', styles["Body"]),
+                Paragraph(f'{cs["weighted_contribution"]}', styles["Body"]),
+            ])
+
+        cat_table = Table(
+            cat_rows,
+            colWidths=[2.0 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch, 1.2 * inch],
+        )
+        cat_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY_LIGHT),
+            ("TEXTCOLOR", (0, 0), (-1, 0), DARK),
+            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        el.append(cat_table)
+        spacer(10)
+
+    # -- Detailed Requirements Table --
+    scored_reqs = scoring.get("scored_requirements", [])
+    if scored_reqs:
+        section("Detailed Requirements Breakdown")
+        body(
+            "Every requirement extracted from the job description, matched against your resume. "
+            "Weight is determined by importance: Required (5), Preferred (3), Nice-to-have (1)."
+        )
+        spacer(6)
+
+        req_header = [
+            Paragraph("<b>Requirement</b>", styles["Body"]),
+            Paragraph("<b>Category</b>", styles["Body"]),
+            Paragraph("<b>Importance</b>", styles["Body"]),
+            Paragraph("<b>Match</b>", styles["Body"]),
+            Paragraph("<b>Points</b>", styles["Body"]),
+        ]
+        req_rows = [req_header]
+
+        match_icons = {"direct": "DIRECT", "partial": "PARTIAL", "none": "NONE"}
+        match_colors = {"direct": EMERALD, "partial": AMBER, "none": RED}
+
+        for req in scored_reqs:
+            m_level = req.get("match_level", "none")
+            m_color = match_colors.get(m_level, MUTED)
+            req_rows.append([
+                Paragraph(req["keyword"], styles["Body"]),
+                Paragraph(
+                    CATEGORY_LABELS_SHORT.get(req["category"], req["category"]),
+                    styles["Detail"],
+                ),
+                Paragraph(req["importance"].replace("_", " ").title(), styles["Detail"]),
+                Paragraph(
+                    f'<font color="{m_color}"><b>{match_icons.get(m_level, m_level)}</b></font>',
+                    styles["Body"],
+                ),
+                Paragraph(
+                    f'{req["earned_points"]}/{req["max_points"]}',
+                    styles["Body"],
+                ),
+            ])
+
+        req_table = Table(
+            req_rows,
+            colWidths=[2.0 * inch, 1.2 * inch, 1.0 * inch, 1.0 * inch, 1.0 * inch],
+        )
+        req_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), PRIMARY_LIGHT),
+            ("TEXTCOLOR", (0, 0), (-1, 0), DARK),
+            ("ALIGN", (2, 0), (-1, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        el.append(req_table)
+        spacer(10)
+
+    # -- Evidence Details --
+    if scored_reqs:
+        section("Match Evidence")
+        body("Detailed justification for each requirement match.")
+        spacer(4)
+        for req in scored_reqs:
+            m_level = req.get("match_level", "none")
+            m_color = match_colors.get(m_level, MUTED)
+            bold(
+                f'{req["keyword"]} — '
+                f'<font color="{m_color}">{m_level.upper()}</font>'
+            )
+            detail(f"Evidence: {req.get('resume_evidence', 'N/A')}")
+            detail(f"Reasoning: {req.get('match_reasoning', 'N/A')}")
+            spacer(4)
+
+    # -- Top Improvements --
+    improvements = scoring.get("top_improvements", [])
+    if improvements:
+        section("Top Score Improvements")
+        body("Changes that would have the biggest impact on your overall score.")
+        spacer(4)
+        for imp in improvements:
+            bold(
+                f'{imp["keyword"]} — +{imp["potential_points"]} pts '
+                f'({imp["percentage_impact"]}% impact)'
+            )
+            detail(imp["suggestion"])
+            spacer(4)
+
+
+# Short category labels for the requirements table
+CATEGORY_LABELS_SHORT = {
+    "hard_skill": "Hard Skill",
+    "soft_skill": "Soft Skill",
+    "domain_knowledge": "Domain",
+    "tool_or_technology": "Tool/Tech",
+    "education": "Education",
+}
