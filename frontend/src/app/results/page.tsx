@@ -47,8 +47,16 @@ export default function ResultsPage() {
       return;
     }
     try {
-      setReport(JSON.parse(stored));
+      const parsed = JSON.parse(stored);
+      // Validate V2 structure — reject stale V1 data
+      if (!parsed.schema_version || !parsed.input_summary?.company_name) {
+        sessionStorage.removeItem("preplens_report");
+        router.push("/new");
+        return;
+      }
+      setReport(parsed);
     } catch {
+      sessionStorage.removeItem("preplens_report");
       router.push("/new");
     }
   }, [router]);
@@ -93,6 +101,10 @@ export default function ResultsPage() {
             <Link href="/new" className="text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-5 w-5" />
             </Link>
+            <Link href="/" className="hidden sm:block">
+              <img src="/logo.png" alt="PrepLens" className="h-6" />
+            </Link>
+            <div className="border-l border-border pl-4 hidden sm:block" />
             <div>
               <h1 className="text-lg font-bold">
                 {r.input_summary.company_name} &mdash; {r.input_summary.job_title}

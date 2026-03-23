@@ -1,243 +1,424 @@
 import io
+from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.colors import HexColor
+from reportlab.lib.colors import HexColor, Color
 from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate,
     Paragraph,
     Spacer,
-    ListFlowable,
-    ListItem,
     HRFlowable,
+    Image,
+    Table,
+    TableStyle,
+    KeepTogether,
+    PageBreak,
 )
 
 from app.models.report_schema import PrepLensReportV2
 
+ASSETS = Path(__file__).resolve().parent.parent / "assets"
+LOGO_PATH = ASSETS / "logo.png"
+
 PRIMARY = HexColor("#4f46e5")
+PRIMARY_LIGHT = HexColor("#e0e7ff")
+DARK = HexColor("#1e293b")
 MUTED = HexColor("#64748b")
+LIGHT_GRAY = HexColor("#f1f5f9")
+BORDER = HexColor("#cbd5e1")
 EMERALD = HexColor("#059669")
+EMERALD_BG = HexColor("#ecfdf5")
 AMBER = HexColor("#d97706")
+AMBER_BG = HexColor("#fffbeb")
 RED = HexColor("#dc2626")
+RED_BG = HexColor("#fef2f2")
+WHITE = HexColor("#ffffff")
+
+
+def _score_color(score: float, max_val: float = 10) -> Color:
+    ratio = score / max_val
+    if ratio >= 0.7:
+        return EMERALD
+    elif ratio >= 0.4:
+        return AMBER
+    return RED
+
+
+def _severity_color(severity: str) -> Color:
+    return {"high": RED, "medium": AMBER, "low": EMERALD}.get(severity, MUTED)
 
 
 def generate_pdf(report: PrepLensReportV2) -> bytes:
-    """Generate a PDF file from a PrepLensReportV2."""
+    """Generate a professionally styled PDF from a PrepLensReportV2."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        leftMargin=0.75 * inch,
-        rightMargin=0.75 * inch,
-        topMargin=0.75 * inch,
-        bottomMargin=0.75 * inch,
+        leftMargin=0.7 * inch,
+        rightMargin=0.7 * inch,
+        topMargin=0.6 * inch,
+        bottomMargin=0.6 * inch,
     )
 
     styles = getSampleStyleSheet()
 
-    styles.add(ParagraphStyle("BriefTitle", parent=styles["Title"], fontSize=20, textColor=PRIMARY, spaceAfter=6))
-    styles.add(ParagraphStyle("BriefMeta", parent=styles["Normal"], fontSize=11, textColor=MUTED, alignment=1, spaceAfter=20))
-    styles.add(ParagraphStyle("SectionHead", parent=styles["Heading2"], fontSize=14, textColor=PRIMARY, spaceBefore=16, spaceAfter=8))
-    styles.add(ParagraphStyle("SubHead", parent=styles["Heading3"], fontSize=11, textColor=MUTED, spaceBefore=8, spaceAfter=4))
-    styles.add(ParagraphStyle("BriefBody", parent=styles["Normal"], fontSize=10, leading=14, spaceAfter=4))
-    styles.add(ParagraphStyle("BriefBold", parent=styles["Normal"], fontSize=10, leading=14, spaceAfter=2))
-    styles.add(ParagraphStyle("BriefSmall", parent=styles["Normal"], fontSize=9, leading=12, textColor=MUTED, spaceAfter=2))
+    # --- Custom styles ---
+    styles.add(ParagraphStyle(
+        "DocTitle", parent=styles["Title"], fontSize=22, textColor=PRIMARY,
+        spaceAfter=2, alignment=TA_CENTER, fontName="Helvetica-Bold",
+    ))
+    styles.add(ParagraphStyle(
+        "DocSubtitle", parent=styles["Normal"], fontSize=12, textColor=DARK,
+        alignment=TA_CENTER, spaceAfter=2, fontName="Helvetica-Bold",
+    ))
+    styles.add(ParagraphStyle(
+        "DocMeta", parent=styles["Normal"], fontSize=9, textColor=MUTED,
+        alignment=TA_CENTER, spaceAfter=16,
+    ))
+    styles.add(ParagraphStyle(
+        "SectionHead", parent=styles["Heading2"], fontSize=13, textColor=PRIMARY,
+        spaceBefore=18, spaceAfter=8, fontName="Helvetica-Bold",
+        borderPadding=(0, 0, 4, 0),
+    ))
+    styles.add(ParagraphStyle(
+        "SubHead", parent=styles["Heading3"], fontSize=10.5, textColor=DARK,
+        spaceBefore=10, spaceAfter=4, fontName="Helvetica-Bold",
+    ))
+    styles.add(ParagraphStyle(
+        "Body", parent=styles["Normal"], fontSize=9.5, leading=13.5,
+        spaceAfter=4, textColor=DARK,
+    ))
+    styles.add(ParagraphStyle(
+        "BodyBold", parent=styles["Normal"], fontSize=9.5, leading=13.5,
+        spaceAfter=2, textColor=DARK, fontName="Helvetica-Bold",
+    ))
+    styles.add(ParagraphStyle(
+        "Detail", parent=styles["Normal"], fontSize=8.5, leading=12,
+        textColor=MUTED, spaceAfter=2,
+    ))
+    styles.add(ParagraphStyle(
+        "BulletItem", parent=styles["Normal"], fontSize=9.5, leading=13.5,
+        textColor=DARK, leftIndent=14, spaceAfter=2,
+    ))
+    styles.add(ParagraphStyle(
+        "Footer", parent=styles["Normal"], fontSize=7.5, textColor=MUTED,
+        alignment=TA_CENTER,
+    ))
 
-    el = []  # elements
+    el = []
     meta = report.input_summary
 
-    # Title
-    el.append(Paragraph("PrepLens Strategy Brief", styles["BriefTitle"]))
+    # ── HEADER WITH LOGO ──
+    if LOGO_PATH.exists():
+        logo = Image(str(LOGO_PATH), width=1.6 * inch, height=0.4 * inch)
+        logo.hAlign = "CENTER"
+        el.append(logo)
+        el.append(Spacer(1, 8))
+
+    el.append(Paragraph("Interview Strategy Dossier", styles["DocTitle"]))
     el.append(Paragraph(
-        f"{meta.company_name} — {meta.job_title}<br/>Generated: {report.generated_at[:10]}",
-        styles["BriefMeta"],
+        f"{meta.company_name}  ·  {meta.job_title}",
+        styles["DocSubtitle"],
     ))
-    el.append(HRFlowable(width="100%", color=PRIMARY, thickness=1))
-    el.append(Spacer(1, 12))
+    el.append(Paragraph(
+        f"Generated {report.generated_at[:10]}  ·  Report ID: {report.report_id[:8]}",
+        styles["DocMeta"],
+    ))
+    el.append(HRFlowable(width="100%", color=PRIMARY, thickness=1.5))
+    el.append(Spacer(1, 6))
 
-    # 1. Executive Summary
-    el.append(Paragraph("Executive Summary", styles["SectionHead"]))
-    el.append(Paragraph(f"<b>{report.executive_summary.headline}</b>", styles["BriefBold"]))
-    el.append(Paragraph(report.executive_summary.summary, styles["BriefBody"]))
-    for t in report.executive_summary.top_takeaways:
-        el.append(Paragraph(f"• {t}", styles["BriefBody"]))
-
-    # 2. Pursuit Recommendation
-    el.append(Paragraph("Pursuit Recommendation", styles["SectionHead"]))
+    # ── SCORE SUMMARY BAR ──
     pr = report.pursuit_recommendation
-    el.append(Paragraph(
-        f"<b>Recommendation:</b> {pr.recommendation.replace('_', ' ').title()} | "
-        f"<b>Fit:</b> {pr.overall_fit_score}/10 | <b>Confidence:</b> {pr.confidence_score}/10",
-        styles["BriefBold"],
-    ))
-    el.append(Paragraph(f"<b>Ideal Candidate:</b> {pr.ideal_candidate_profile}", styles["BriefBody"]))
-    el.append(Paragraph(f"<b>Your Outlook:</b> {pr.candidate_outlook}", styles["BriefBody"]))
+    fit_color = _score_color(pr.overall_fit_score)
+    conf_color = _score_color(pr.confidence_score)
+    rec_label = pr.recommendation.replace("_", " ").title()
+
+    def _score_cell(value: str, label: str, color: Color) -> Paragraph:
+        return Paragraph(
+            f'<font size="18" color="{color}"><b>{value}</b></font>'
+            f'<br/><font size="8" color="{MUTED}">{label}</font>',
+            ParagraphStyle("_sc", parent=styles["Normal"], alignment=TA_CENTER,
+                           leading=22, spaceAfter=0, spaceBefore=0),
+        )
+
+    score_data = [[
+        _score_cell(f"{pr.overall_fit_score}/10", "Overall Fit", fit_color),
+        _score_cell(f"{pr.confidence_score}/10", "Confidence", conf_color),
+        _score_cell(rec_label, "Recommendation", PRIMARY),
+    ]]
+    col_w = 2.2 * inch
+    score_table = Table(score_data, colWidths=[col_w, col_w, col_w])
+    score_table.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GRAY),
+        ("ROUNDEDCORNERS", [6, 6, 6, 6]),
+        ("TOPPADDING", (0, 0), (-1, 0), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+        # vertical dividers between columns
+        ("LINEAFTER", (0, 0), (0, -1), 0.5, BORDER),
+        ("LINEAFTER", (1, 0), (1, -1), 0.5, BORDER),
+    ]))
+    el.append(score_table)
+    el.append(Spacer(1, 10))
+
+    def section(title: str):
+        el.append(Spacer(1, 4))
+        el.append(HRFlowable(width="100%", color=BORDER, thickness=0.5))
+        el.append(Paragraph(title, styles["SectionHead"]))
+
+    def sub(title: str):
+        el.append(Paragraph(title, styles["SubHead"]))
+
+    def body(text: str):
+        el.append(Paragraph(text, styles["Body"]))
+
+    def bold(text: str):
+        el.append(Paragraph(text, styles["BodyBold"]))
+
+    def detail(text: str):
+        el.append(Paragraph(text, styles["Detail"]))
+
+    def bullet(text: str):
+        el.append(Paragraph(f"•  {text}", styles["BulletItem"]))
+
+    def kv(key: str, value: str):
+        el.append(Paragraph(f"<b>{key}:</b>  {value}", styles["Body"]))
+
+    def spacer(h: int = 4):
+        el.append(Spacer(1, h))
+
+    # ── 1. EXECUTIVE SUMMARY ──
+    section("1  Executive Summary")
+    bold(report.executive_summary.headline)
+    body(report.executive_summary.summary)
+    for t in report.executive_summary.top_takeaways:
+        bullet(t)
+
+    # ── 2. PURSUIT RECOMMENDATION ──
+    section("2  Pursuit Recommendation")
+    kv("Ideal Candidate", pr.ideal_candidate_profile)
+    kv("Your Outlook", pr.candidate_outlook)
+    sub("Reasoning")
     for reason in pr.reasoning:
-        el.append(Paragraph(f"• {reason}", styles["BriefBody"]))
+        bullet(reason)
 
-    # 3. Company Snapshot
-    el.append(Paragraph("Company Snapshot", styles["SectionHead"]))
+    # ── 3. COMPANY SNAPSHOT ──
+    section("3  Company Snapshot")
     cs = report.company_snapshot
-    el.append(Paragraph(cs.company_overview, styles["BriefBody"]))
+    body(cs.company_overview)
     if cs.business_model:
-        el.append(Paragraph(f"<b>Business Model:</b> {cs.business_model}", styles["BriefBody"]))
+        kv("Business Model", cs.business_model)
     if cs.product_focus:
-        el.append(Paragraph(f"<b>Product Focus:</b> {cs.product_focus}", styles["BriefBody"]))
+        kv("Product Focus", cs.product_focus)
     if cs.company_stage != "unknown":
-        el.append(Paragraph(f"<b>Stage:</b> {cs.company_stage.title()} | <b>Risk:</b> {cs.risk_level.title()}", styles["BriefBody"]))
-    for s in cs.engineering_signals:
-        el.append(Paragraph(f"• {s}", styles["BriefBody"]))
+        kv("Stage", f"{cs.company_stage.title()}  ·  Risk: {cs.risk_level.title()}")
+    if cs.engineering_signals:
+        sub("Engineering Signals")
+        for s in cs.engineering_signals:
+            bullet(s)
 
-    # 4. Role Snapshot
-    el.append(Paragraph("Role Snapshot", styles["SectionHead"]))
+    # ── 4. ROLE SNAPSHOT ──
+    section("4  Role Snapshot")
     rs = report.role_snapshot
-    el.append(Paragraph(rs.role_summary, styles["BriefBody"]))
+    body(rs.role_summary)
     if rs.seniority_signal != "unknown":
-        el.append(Paragraph(f"<b>Seniority:</b> {rs.seniority_signal.title()}", styles["BriefBody"]))
+        kv("Seniority", rs.seniority_signal.title())
     if rs.primary_stack_signals:
-        el.append(Paragraph(f"<b>Stack:</b> {', '.join(rs.primary_stack_signals)}", styles["BriefBody"]))
+        kv("Stack", ", ".join(rs.primary_stack_signals))
     if rs.success_profile:
-        el.append(Paragraph(f"<b>Success Profile:</b> {rs.success_profile}", styles["BriefBody"]))
+        kv("Success Profile", rs.success_profile)
 
-    # 5. Hiring Priorities
-    el.append(Paragraph("Hiring Priorities", styles["SectionHead"]))
+    # ── 5. HIRING PRIORITIES ──
+    section("5  Hiring Priorities")
     for hp in report.hiring_priorities:
-        el.append(Paragraph(f"<b>[{hp.importance_score}/5]</b> {hp.priority}", styles["BriefBold"]))
-        el.append(Paragraph(hp.why_it_matters, styles["BriefSmall"]))
+        color = _score_color(hp.importance_score, 5)
+        el.append(Paragraph(
+            f'<font color="{color}"><b>[{hp.importance_score}/5]</b></font>  <b>{hp.priority}</b>',
+            styles["Body"],
+        ))
+        detail(hp.why_it_matters)
+        spacer()
 
-    # 6. Fit Analysis
-    el.append(Paragraph("Fit Analysis", styles["SectionHead"]))
+    # ── 6. FIT ANALYSIS ──
+    section("6  Fit Analysis")
     if report.fit_analysis.strong_fit_signals:
-        el.append(Paragraph("Strong Fit", styles["SubHead"]))
+        sub("Strong Fit")
         for s in report.fit_analysis.strong_fit_signals:
-            el.append(Paragraph(f"<b>[{s.strength_score}/10]</b> {s.signal}", styles["BriefBold"]))
-            el.append(Paragraph(s.evidence, styles["BriefSmall"]))
+            color = _score_color(s.strength_score)
+            el.append(Paragraph(
+                f'<font color="{color}"><b>[{s.strength_score}/10]</b></font>  <b>{s.signal}</b>',
+                styles["Body"],
+            ))
+            detail(s.evidence)
+            spacer()
     if report.fit_analysis.partial_fit_signals:
-        el.append(Paragraph("Partial Fit", styles["SubHead"]))
+        sub("Partial Fit")
         for s in report.fit_analysis.partial_fit_signals:
-            el.append(Paragraph(f"<b>[{s.strength_score}/10]</b> {s.signal}", styles["BriefBold"]))
-            el.append(Paragraph(s.evidence, styles["BriefSmall"]))
+            color = _score_color(s.strength_score)
+            el.append(Paragraph(
+                f'<font color="{color}"><b>[{s.strength_score}/10]</b></font>  <b>{s.signal}</b>',
+                styles["Body"],
+            ))
+            detail(s.evidence)
+            spacer()
     if report.fit_analysis.missing_or_weak_signals:
-        el.append(Paragraph("Gaps", styles["SubHead"]))
+        sub("Gaps")
         for s in report.fit_analysis.missing_or_weak_signals:
-            el.append(Paragraph(f"<b>[{s.gap_severity.upper()}]</b> {s.signal}", styles["BriefBold"]))
-            el.append(Paragraph(s.why_it_matters, styles["BriefSmall"]))
+            color = _severity_color(s.gap_severity)
+            el.append(Paragraph(
+                f'<font color="{color}"><b>[{s.gap_severity.upper()}]</b></font>  <b>{s.signal}</b>',
+                styles["Body"],
+            ))
+            detail(s.why_it_matters)
+            spacer()
 
-    # 7. Concerns & Mitigation
-    el.append(Paragraph("Concerns & Mitigation", styles["SectionHead"]))
+    # ── 7. CONCERNS & MITIGATION ──
+    section("7  Concerns & Mitigation")
     for c in report.concerns_and_mitigation:
-        el.append(Paragraph(f"<b>[{c.severity.upper()}]</b> {c.concern}", styles["BriefBold"]))
-        el.append(Paragraph(f"Why: {c.why_they_may_care}", styles["BriefSmall"]))
-        el.append(Paragraph(f"Mitigation: {c.mitigation_strategy}", styles["BriefBody"]))
-        el.append(Paragraph(f"Best proof: {c.best_proof_to_use}", styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+        color = _severity_color(c.severity)
+        el.append(Paragraph(
+            f'<font color="{color}"><b>[{c.severity.upper()}]</b></font>  <b>{c.concern}</b>',
+            styles["Body"],
+        ))
+        detail(f"Why they may care: {c.why_they_may_care}")
+        kv("Mitigation", c.mitigation_strategy)
+        detail(f"Best proof: {c.best_proof_to_use}")
+        spacer(6)
 
-    # 8. Resume Tailoring
-    el.append(Paragraph("Resume Tailoring", styles["SectionHead"]))
+    # ── 8. RESUME TAILORING ──
+    section("8  Resume Tailoring")
     rt = report.resume_tailoring
-    el.append(Paragraph(f"<b>Verdict:</b> {rt.resume_verdict.replace('_', ' ').title()}", styles["BriefBold"]))
+    kv("Verdict", rt.resume_verdict.replace("_", " ").title())
     if rt.positioning_angle:
-        el.append(Paragraph(f"<b>Positioning:</b> {rt.positioning_angle}", styles["BriefBody"]))
-    for edit in rt.priority_edits:
-        el.append(Paragraph(f"<b>[{edit.type.replace('_', ' ')}]</b> {edit.target}: {edit.recommendation}", styles["BriefBody"]))
+        kv("Positioning", rt.positioning_angle)
+    if rt.priority_edits:
+        sub("Priority Edits")
+        for edit in rt.priority_edits:
+            el.append(Paragraph(
+                f'<b>[{edit.type.replace("_", " ").title()}]</b>  {edit.target}',
+                styles["BodyBold"],
+            ))
+            detail(edit.recommendation)
+            spacer()
     if rt.missing_keywords:
-        el.append(Paragraph(f"<b>Missing Keywords:</b> {', '.join(rt.missing_keywords)}", styles["BriefBody"]))
+        kv("Missing Keywords", ", ".join(rt.missing_keywords))
 
-    # 9. Application Strategy
-    el.append(Paragraph("Application Strategy", styles["SectionHead"]))
+    # ── 9. APPLICATION STRATEGY ──
+    section("9  Application Strategy")
     app_s = report.application_strategy
-    el.append(Paragraph(f"<b>Apply Now:</b> {'Yes' if app_s.apply_now else 'No'} | <b>Referral:</b> {'Recommended' if app_s.referral_recommended else 'Not required'}", styles["BriefBold"]))
+    kv("Apply Now", "Yes" if app_s.apply_now else "No")
+    kv("Referral", "Recommended" if app_s.referral_recommended else "Not required")
     if app_s.outreach_angle:
-        el.append(Paragraph(f"<b>Outreach:</b> {app_s.outreach_angle}", styles["BriefBody"]))
+        kv("Outreach Angle", app_s.outreach_angle)
     if app_s.suggested_connection_note:
-        el.append(Paragraph(f"<b>Connection Note:</b> \"{app_s.suggested_connection_note}\"", styles["BriefBody"]))
+        body(f'<i>"{app_s.suggested_connection_note}"</i>')
 
-    # 10. Recruiter Screen Prep
-    el.append(Paragraph("Recruiter Screen Prep", styles["SectionHead"]))
+    # ── 10. RECRUITER SCREEN PREP ──
+    section("10  Recruiter Screen Prep")
     rp = report.recruiter_screen_prep
+    sub("Screening Focus Areas")
     for s in rp.what_they_will_likely_screen_for:
-        el.append(Paragraph(f"• {s}", styles["BriefBody"]))
+        bullet(s)
+    sub("Likely Questions")
     for q in rp.likely_recruiter_questions:
-        el.append(Paragraph(f"<b>{q.question}</b>", styles["BriefBold"]))
-        el.append(Paragraph(f"Intent: {q.intent}", styles["BriefSmall"]))
+        bold(q.question)
+        detail(f"Intent: {q.intent}")
         for p in q.suggested_answer_points:
-            el.append(Paragraph(f"  • {p}", styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+            bullet(p)
+        spacer(4)
 
-    # 11. Story Bank
-    el.append(Paragraph("Story Bank", styles["SectionHead"]))
+    # ── 11. STORY BANK ──
+    section("11  Story Bank")
     for s in report.story_bank:
-        el.append(Paragraph(f"<b>{s.story_title}</b>", styles["BriefBold"]))
-        el.append(Paragraph(f"Experience: {s.recommended_experience} | Angle: {s.angle_to_emphasize}", styles["BriefSmall"]))
+        bold(s.story_title)
+        kv("Experience", s.recommended_experience)
+        kv("Angle", s.angle_to_emphasize)
         if s.key_metrics_or_outcomes:
-            el.append(Paragraph(f"Metrics: {', '.join(s.key_metrics_or_outcomes)}", styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+            kv("Metrics", ", ".join(s.key_metrics_or_outcomes))
+        spacer(6)
 
-    # 12. Interview Rounds
-    el.append(Paragraph("Interview Round Strategy", styles["SectionHead"]))
+    # ── 12. INTERVIEW ROUNDS ──
+    section("12  Interview Round Strategy")
     for rd in report.interview_rounds:
-        el.append(Paragraph(f"<b>{rd.round_name.replace('_', ' ').title()}</b>", styles["BriefBold"]))
-        el.append(Paragraph(rd.round_goal, styles["BriefBody"]))
-        for p in rd.candidate_focus:
-            el.append(Paragraph(f"  • {p}", styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+        bold(rd.round_name.replace("_", " ").title())
+        body(rd.round_goal)
+        for f in rd.candidate_focus:
+            bullet(f)
+        spacer(4)
 
-    # 13. Interview Questions
-    el.append(Paragraph("Likely Interview Questions", styles["SectionHead"]))
+    # ── 13. INTERVIEW QUESTIONS ──
+    section("13  Likely Interview Questions")
     for q in report.likely_interview_questions:
-        el.append(Paragraph(f"<b>[{q.category.replace('_', ' ').title()}]</b> {q.question}", styles["BriefBold"]))
-        el.append(Paragraph(q.why_they_may_ask, styles["BriefSmall"]))
+        el.append(Paragraph(
+            f'<font color="{PRIMARY}"><b>[{q.category.replace("_", " ").title()}]</b></font>  {q.question}',
+            styles["BodyBold"],
+        ))
+        detail(q.why_they_may_ask)
         if q.best_story_or_topic:
-            el.append(Paragraph(f"Best story/topic: {q.best_story_or_topic}", styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+            detail(f"Best story/topic: {q.best_story_or_topic}")
+        spacer(4)
 
-    # 14. Reverse Interview Questions
-    el.append(Paragraph("Reverse-Interview Questions", styles["SectionHead"]))
+    # ── 14. REVERSE INTERVIEW ──
+    section("14  Reverse-Interview Questions")
     for q in report.reverse_interview_questions:
-        el.append(Paragraph(f"<b>[{q.target_interviewer.replace('_', ' ').title()}]</b> {q.question}", styles["BriefBold"]))
-        el.append(Paragraph(q.why_ask_this, styles["BriefSmall"]))
-        el.append(Spacer(1, 4))
+        el.append(Paragraph(
+            f'<font color="{PRIMARY}"><b>[{q.target_interviewer.replace("_", " ").title()}]</b></font>  {q.question}',
+            styles["BodyBold"],
+        ))
+        detail(q.why_ask_this)
+        spacer(4)
 
-    # 15. Logistics
-    el.append(Paragraph("Logistics & Constraints", styles["SectionHead"]))
+    # ── 15. LOGISTICS ──
+    section("15  Logistics & Constraints")
     lg = report.logistics_and_constraints
-    el.append(Paragraph(f"<b>Work Model:</b> {lg.work_model.title()} | <b>Level Clarity:</b> {lg.level_clarity.title()}", styles["BriefBody"]))
+    kv("Work Model", lg.work_model.title())
+    kv("Level Clarity", lg.level_clarity.title())
     if lg.location_notes:
-        el.append(Paragraph(f"<b>Location:</b> {lg.location_notes}", styles["BriefBody"]))
+        kv("Location", lg.location_notes)
     if lg.compensation_signal:
-        el.append(Paragraph(f"<b>Compensation:</b> {lg.compensation_signal}", styles["BriefBody"]))
+        kv("Compensation", lg.compensation_signal)
     if lg.timeline_signal:
-        el.append(Paragraph(f"<b>Timeline:</b> {lg.timeline_signal}", styles["BriefBody"]))
+        kv("Timeline", lg.timeline_signal)
 
-    # 16. Red Flags & Unknowns
-    el.append(Paragraph("Red Flags & Unknowns", styles["SectionHead"]))
+    # ── 16. RED FLAGS ──
+    section("16  Red Flags & Unknowns")
     for f in report.red_flags_and_unknowns.red_flags:
-        el.append(Paragraph(f"<b>[{f.severity.upper()}]</b> {f.flag}", styles["BriefBold"]))
-        el.append(Paragraph(f.why_it_matters, styles["BriefSmall"]))
+        color = _severity_color(f.severity)
+        el.append(Paragraph(
+            f'<font color="{color}"><b>[{f.severity.upper()}]</b></font>  <b>{f.flag}</b>',
+            styles["Body"],
+        ))
+        detail(f.why_it_matters)
+        spacer()
     if report.red_flags_and_unknowns.unknowns_to_verify:
-        el.append(Paragraph("Unknowns to Verify", styles["SubHead"]))
+        sub("Unknowns to Verify")
         for u in report.red_flags_and_unknowns.unknowns_to_verify:
-            el.append(Paragraph(f"• {u}", styles["BriefBody"]))
+            bullet(u)
 
-    # 17. Immediate Next Actions
-    el.append(Paragraph("Immediate Next Actions", styles["SectionHead"]))
+    # ── 17. NEXT ACTIONS ──
+    section("17  Immediate Next Actions")
     for a in sorted(report.immediate_next_actions, key=lambda x: x.priority):
-        time_str = f" (~{a.time_estimate_minutes}m)" if a.time_estimate_minutes else ""
-        el.append(Paragraph(f"<b>{a.priority}.</b> {a.action}{time_str}", styles["BriefBold"]))
-        el.append(Paragraph(a.why, styles["BriefSmall"]))
+        time_str = f"  (~{a.time_estimate_minutes} min)" if a.time_estimate_minutes else ""
+        bold(f"{a.priority}.  {a.action}{time_str}")
+        detail(a.why)
+        spacer()
 
-    # 18. Prep Checklist
-    el.append(Paragraph("Preparation Checklist", styles["SectionHead"]))
+    # ── 18. PREP CHECKLIST ──
+    section("18  Preparation Checklist")
     for item in report.prep_checklist:
-        el.append(Paragraph(f"☐ {item.item}", styles["BriefBody"]))
+        el.append(Paragraph(f"[ ]  {item.item}", styles["Body"]))
 
-    # Footer
-    el.append(Spacer(1, 24))
-    el.append(HRFlowable(width="100%", color=MUTED, thickness=0.5))
+    # ── FOOTER ──
+    el.append(Spacer(1, 28))
+    el.append(HRFlowable(width="100%", color=BORDER, thickness=0.5))
+    el.append(Spacer(1, 6))
     el.append(Paragraph(
-        "Generated by PrepLens",
-        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=8, textColor=MUTED, alignment=1),
+        "Generated by PrepLens  ·  Confidential  ·  For candidate use only",
+        styles["Footer"],
     ))
 
     doc.build(el)

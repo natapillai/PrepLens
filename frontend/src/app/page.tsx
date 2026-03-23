@@ -7,7 +7,9 @@ export default function HomePage() {
       {/* Navbar */}
       <nav className="border-b border-border bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <span className="text-xl font-bold text-primary">PrepLens</span>
+          <Link href="/">
+            <img src="/logo.png" alt="PrepLens" className="h-8" />
+          </Link>
           <Link
             href="/new"
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-accent transition-colors"

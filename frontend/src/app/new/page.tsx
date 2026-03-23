@@ -7,8 +7,8 @@ export default function NewBriefPage() {
       {/* Navbar */}
       <nav className="border-b border-border bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link href="/" className="text-xl font-bold text-primary">
-            PrepLens
+          <Link href="/">
+            <img src="/logo.png" alt="PrepLens" className="h-8" />
           </Link>
         </div>
       </nav>
