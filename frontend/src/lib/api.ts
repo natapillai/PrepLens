@@ -1,15 +1,28 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export async function analyzeResume(formData: FormData) {
-  const res = await fetch(`${API_BASE}/api/v1/analyze`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: { message: "Request failed" } }));
-    throw new Error(err.error?.message || `Server error: ${res.status}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 min timeout
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/analyze`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: { message: "Request failed" } }));
+      throw new Error(err.error?.message || `Server error: ${res.status}`);
+    }
+    return res.json();
+  } catch (e: unknown) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error("Analysis timed out. Please try again — the AI service may be slow.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return res.json();
 }
 
 export async function exportDossier(

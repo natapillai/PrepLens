@@ -8,7 +8,7 @@ import json
 import logging
 from collections import defaultdict
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.models.scoring_schema import (
@@ -33,8 +33,8 @@ from app.prompts.scoring_prompt import (
 logger = logging.getLogger(__name__)
 
 
-def _extract_requirements(
-    client: OpenAI,
+async def _extract_requirements(
+    client: AsyncOpenAI,
     job_description: str,
     resume_text: str,
 ) -> ExtractionResult:
@@ -42,13 +42,13 @@ def _extract_requirements(
 
     user_prompt = build_scoring_prompt(job_description, resume_text)
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=[
             {"role": "system", "content": SCORING_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.2,  # Low temp for consistent extraction
+        temperature=0.1,  # Very low temp for consistent, conservative extraction
         response_format={"type": "json_object"},
     )
 
@@ -60,8 +60,8 @@ def _extract_requirements(
     return ExtractionResult.model_validate(data)
 
 
-def _compute_confidence(
-    client: OpenAI,
+async def _compute_confidence(
+    client: AsyncOpenAI,
     job_description: str,
     resume_text: str,
     scored_reqs: list[ScoredRequirement],
@@ -81,7 +81,7 @@ def _compute_confidence(
         no_matches=none_,
     )
 
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model=settings.OPENAI_MODEL,
         messages=[
             {"role": "system", "content": CONFIDENCE_SYSTEM_PROMPT},
@@ -112,6 +112,40 @@ def _compute_confidence(
         match_clarity_reasoning=data["match_clarity_reasoning"],
         overall_confidence=overall,
     )
+
+
+def _normalize_category_weights(
+    extraction: ExtractionResult,
+) -> list[CategoryWeight]:
+    """Deterministically compute category weights from requirement distribution.
+
+    Instead of using LLM-assigned weights (which vary per run), we derive
+    weights from the importance-weighted point share of each category.
+    This ensures identical extractions always produce identical weights.
+    """
+    # Compute total importance-weighted points per category
+    cat_points: dict[str, float] = defaultdict(float)
+    for req in extraction.requirements:
+        cat_points[req.category] += IMPORTANCE_WEIGHTS.get(req.importance, 3.0)
+
+    total = sum(cat_points.values())
+    if total == 0:
+        # Fallback: equal weights
+        n = len(cat_points) or 1
+        return [
+            CategoryWeight(category=c, weight=round(1.0 / n, 3), reasoning="equal fallback")
+            for c in cat_points
+        ]
+
+    # Derive weights proportional to each category's importance-weighted share
+    return [
+        CategoryWeight(
+            category=cat,
+            weight=round(pts / total, 3),
+            reasoning=f"Derived from requirement distribution: {pts:.1f}/{total:.1f} importance-weighted points",
+        )
+        for cat, pts in cat_points.items()
+    ]
 
 
 def _score_requirements(
@@ -228,20 +262,23 @@ def _compute_improvements(
     return improvements[:5]
 
 
-def compute_scores(
+async def compute_scores(
     job_description: str,
     resume_text: str,
 ) -> ScoringResult:
     """Full scoring pipeline: extract, score, compute confidence."""
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
     # Pass 1: LLM extraction
-    extraction = _extract_requirements(client, job_description, resume_text)
+    logger.info("Scoring: starting requirement extraction...")
+    extraction = await _extract_requirements(client, job_description, resume_text)
+    logger.info("Scoring: extracted %d requirements.", len(extraction.requirements))
 
-    # Pass 2: Deterministic scoring
+    # Pass 2: Deterministic scoring (use derived weights, not LLM-assigned)
     scored_reqs = _score_requirements(extraction)
-    category_scores = _compute_category_scores(scored_reqs, extraction.category_weights)
+    deterministic_weights = _normalize_category_weights(extraction)
+    category_scores = _compute_category_scores(scored_reqs, deterministic_weights)
 
     total_earned = sum(cs.earned_points for cs in category_scores)
     total_max = sum(cs.max_points for cs in category_scores)
@@ -256,7 +293,9 @@ def compute_scores(
     improvements = _compute_improvements(scored_reqs, total_max)
 
     # Confidence
-    confidence = _compute_confidence(client, job_description, resume_text, scored_reqs)
+    logger.info("Scoring: starting confidence evaluation...")
+    confidence = await _compute_confidence(client, job_description, resume_text, scored_reqs)
+    logger.info("Scoring: confidence=%.1f", confidence.overall_confidence)
 
     return ScoringResult(
         overall_fit_score=overall_fit,

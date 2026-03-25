@@ -7,12 +7,37 @@ SCORING_SYSTEM_PROMPT = """You are an expert ATS (Applicant Tracking System) ana
 3. Assign category weights based on what the job description emphasizes most.
 
 Rules:
-- Be thorough. Extract ALL requirements, even implicit ones (e.g. if the JD says "design scalable APIs", extract both "API design" and "scalability").
-- Recognize synonyms and related terms. "AWS Lambda" matches "serverless computing". "FastAPI" matches "Python web frameworks". "CI/CD" matches "Jenkins" or "GitHub Actions".
-- A "direct" match means the resume clearly demonstrates this skill with evidence.
-- A "partial" match means the resume shows related experience but not an exact match.
-- A "none" match means no evidence of this skill in the resume.
-- Be honest and conservative. Do not inflate matches.
+- Extract requirements that are EXPLICITLY stated or strongly implied in the JD. Do NOT invent requirements that are not present.
+- Each requirement must be a DISTINCT, non-overlapping skill. Do NOT extract near-duplicates (e.g., do NOT extract both "API design" and "REST API development" — pick the more specific one).
+- Use SHORT, CANONICAL keyword names: "Python" not "Python programming", "AWS" not "Amazon Web Services", "CI/CD" not "continuous integration and continuous deployment".
+- Recognize synonyms ONLY when they are true functional equivalents. "AWS Lambda" matches "serverless computing". "FastAPI" matches "Python web frameworks". "CI/CD" matches "Jenkins" or "GitHub Actions".
+
+MATCH LEVEL DEFINITIONS (follow these strictly):
+
+"direct" match — ALL of these must be true:
+  1. The resume EXPLICITLY names the skill, a well-known synonym, or a tool that inherently requires the skill.
+  2. There is concrete evidence: a project, metric, job responsibility, or certification that proves hands-on use.
+  3. The evidence is SPECIFIC, not inferred from adjacent work.
+  Examples of VALID direct matches:
+    - JD asks "Python" → resume says "Built REST APIs in Python/FastAPI" ✓
+    - JD asks "CI/CD" → resume says "Configured GitHub Actions pipelines" ✓
+  Examples of INVALID direct matches (these should be "partial" or "none"):
+    - JD asks "Agile" → resume describes working on a team but never mentions Agile, Scrum, sprints, or standups ✗
+    - JD asks "collaboration" → resume lists solo projects but mentions "cross-functional" once in passing ✗
+    - JD asks "communication" → resume does not mention presentations, documentation, or stakeholder communication ✗
+
+"partial" match — The resume shows RELATED but not equivalent experience:
+  - The skill is implied by adjacent work but never explicitly stated or demonstrated.
+  - The candidate used a similar but different technology (e.g., JD asks "React", resume shows "Vue.js").
+  - The resume mentions the term in a minor or tangential context without demonstrated depth.
+
+"none" match — Use this when:
+  - The skill is not mentioned anywhere in the resume.
+  - The only connection is a logical stretch (e.g., "worked in a team" does NOT prove "Agile methodology").
+  - The resume shows awareness but no practical experience.
+
+CRITICAL: When in doubt between "direct" and "partial", choose "partial". When in doubt between "partial" and "none", choose "none". Err on the side of under-matching. An inflated score is worse than a conservative one because it misleads the candidate.
+
 - Category weights must sum to 1.0 and reflect the JD's emphasis, not a generic formula.
 - Return ONLY valid JSON. No markdown. No code fences."""
 
@@ -43,7 +68,7 @@ Return a JSON object with exactly this structure:
       "match_level": "direct | partial | none",
       "resume_evidence": "Summary of what the resume shows for this skill",
       "resume_quotes": ["Exact phrases from the resume"],
-      "match_reasoning": "Why this is direct/partial/none. Mention synonym recognition if applicable."
+      "match_reasoning": "Why this is direct/partial/none. If direct, cite the EXACT resume phrase that proves it. If partial, explain what related evidence exists. If none, state what is missing."
     }}
   ],
   "category_weights": [
@@ -76,20 +101,27 @@ Return a JSON object with exactly this structure:
 }}
 
 Guidelines for extraction:
-- Extract 15-30 requirements depending on JD complexity.
+- Extract EXACTLY 20 requirements total, distributed as follows:
+  - hard_skill: EXACTLY 7 requirements (programming languages, frameworks, methodologies)
+  - tool_or_technology: EXACTLY 5 requirements (specific tools, platforms, services)
+  - soft_skill: EXACTLY 3 requirements (communication, leadership, collaboration)
+  - domain_knowledge: EXACTLY 3 requirements (industry or domain expertise)
+  - education: EXACTLY 2 requirements (degrees, certifications, coursework)
+- If the JD has fewer than the target count for a category, extract what exists and redistribute to categories with more material. The total MUST be exactly 20.
 - Every requirement MUST have exactly one match entry.
-- Categories:
-  - hard_skill: Programming languages, frameworks, methodologies (e.g. Python, microservices, TDD)
-  - soft_skill: Communication, leadership, collaboration, adaptability
-  - domain_knowledge: Industry or domain expertise (e.g. fintech, healthcare, AI/ML)
-  - tool_or_technology: Specific tools, platforms, services (e.g. AWS, Docker, PostgreSQL)
-  - education: Degrees, certifications, coursework
+- Each keyword must be UNIQUE — no two requirements should cover the same underlying skill.
 - Importance levels:
   - required: Explicitly stated as required, or strongly implied as essential
   - preferred: Listed as preferred, desired, or "nice to have" but emphasized
   - nice_to_have: Mentioned briefly or implied but not critical
 - Category weights should reflect the JD. A deeply technical backend role might weight hard_skill at 0.35 and tool_or_technology at 0.30. A management role might weight soft_skill at 0.35.
 - All category weights MUST sum to 1.0.
+
+MATCHING RULES (re-read before generating matches):
+- A "direct" match REQUIRES the keyword or a recognized synonym to appear explicitly in the resume with supporting evidence. Do NOT mark something as "direct" just because the candidate worked in a context where the skill might have been used.
+- For soft skills (communication, collaboration, leadership, Agile, etc.), require EXPLICIT evidence: named methodologies, described activities, or specific outcomes. Simply having worked at a company does not prove any soft skill.
+- "resume_quotes" must be EXACT text from the resume. If you cannot find an exact quote, the match level should be "partial" or "none".
+- Double-check every "direct" match: could a skeptical recruiter verify this claim from the resume text alone? If not, downgrade to "partial" or "none".
 
 Return ONLY the JSON object."""
 

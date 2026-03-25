@@ -10,7 +10,7 @@ def test_v2_schema_validates():
     report = PrepLensReportV2.model_validate(SAMPLE_REPORT_V2)
     assert report.schema_version == "2.0"
     assert report.input_summary.company_name == "TestCo"
-    assert report.pursuit_recommendation.overall_fit_score == 7
+    assert report.pursuit_recommendation.overall_fit_score == 7.2
     assert len(report.hiring_priorities) == 2
     assert len(report.likely_interview_questions) == 2
     assert len(report.prep_checklist) == 3

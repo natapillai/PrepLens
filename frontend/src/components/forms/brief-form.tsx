@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { ResumeUploadDropzone } from "./resume-upload-dropzone";
@@ -16,9 +16,11 @@ interface FormErrors {
 }
 
 const STEPS = [
-  "Uploading resume...",
-  "Analyzing role requirements...",
-  "Generating strategy brief...",
+  { label: "Uploading & parsing resume...", delay: 0 },
+  { label: "Extracting role requirements...", delay: 8 },
+  { label: "Scoring resume against requirements...", delay: 25 },
+  { label: "Generating strategy brief...", delay: 50 },
+  { label: "Building your dossier...", delay: 90 },
 ];
 
 export function BriefForm() {
@@ -32,6 +34,28 @@ export function BriefForm() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  // Elapsed time counter
+  useEffect(() => {
+    if (!isLoading) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
+
+  // Advance steps based on elapsed time
+  useEffect(() => {
+    if (!isLoading) return;
+    const nextStep = [...STEPS].reverse().find((s) => elapsedSeconds >= s.delay);
+    if (nextStep) {
+      setCurrentStep(STEPS.indexOf(nextStep));
+    }
+  }, [elapsedSeconds, isLoading]);
 
   function validate(): boolean {
     const errs: FormErrors = {};
@@ -63,14 +87,7 @@ export function BriefForm() {
       if (companyNotes.trim())
         formData.append("company_notes", companyNotes.trim());
 
-      // Simulate step progress
-      const stepTimer = setInterval(() => {
-        setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
-      }, 3000);
-
       const data = await analyzeResume(formData);
-
-      clearInterval(stepTimer);
 
       // Store the report in sessionStorage and navigate to results
       const report = data.report as PrepLensReportV2;
@@ -198,7 +215,7 @@ export function BriefForm() {
         {isLoading ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            {STEPS[currentStep]}
+            {STEPS[currentStep].label}
           </>
         ) : (
           "Generate Strategy Brief"
@@ -207,28 +224,49 @@ export function BriefForm() {
 
       {/* Progress steps */}
       {isLoading && (
-        <div className="space-y-2 pt-2">
-          {STEPS.map((step, i) => (
+        <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              This typically takes 1–2 minutes
+            </span>
+            <span className="font-mono text-muted-foreground">
+              {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
             <div
-              key={step}
-              className={`flex items-center gap-2 text-sm ${
-                i <= currentStep
-                  ? "text-primary font-medium"
-                  : "text-muted-foreground"
-              }`}
-            >
+              className="h-full rounded-full bg-primary transition-all duration-1000 ease-out"
+              style={{
+                width: `${Math.min((elapsedSeconds / 120) * 100, 95)}%`,
+              }}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            {STEPS.map((step, i) => (
               <div
-                className={`h-2 w-2 rounded-full ${
-                  i < currentStep
-                    ? "bg-primary"
-                    : i === currentStep
-                      ? "bg-primary animate-pulse"
-                      : "bg-border"
+                key={step.label}
+                className={`flex items-center gap-2 text-sm ${
+                  i <= currentStep
+                    ? "text-primary font-medium"
+                    : "text-muted-foreground"
                 }`}
-              />
-              {step}
-            </div>
-          ))}
+              >
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    i < currentStep
+                      ? "bg-primary"
+                      : i === currentStep
+                        ? "bg-primary animate-pulse"
+                        : "bg-border"
+                  }`}
+                />
+                {step.label}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </form>

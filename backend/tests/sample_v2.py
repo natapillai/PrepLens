@@ -20,8 +20,8 @@ SAMPLE_REPORT_V2 = {
         "top_takeaways": ["Strong Python skills", "Relevant domain experience"],
     },
     "pursuit_recommendation": {
-        "overall_fit_score": 7,
-        "confidence_score": 6,
+        "overall_fit_score": 7.2,
+        "confidence_score": 6.5,
         "recommendation": "pursue",
         "reasoning": ["Strong backend alignment", "Domain overlap"],
         "ideal_candidate_profile": "Senior backend engineer with distributed systems experience",

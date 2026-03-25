@@ -61,7 +61,7 @@ async def analyze(
 
     # Generate dossier via AI
     try:
-        report = generate_dossier(
+        report = await generate_dossier(
             company_name=company_name.strip(),
             job_title=job_title.strip(),
             job_description=job_description.strip(),

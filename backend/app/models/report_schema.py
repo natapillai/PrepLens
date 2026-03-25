@@ -26,8 +26,8 @@ class ExecutiveSummary(BaseModel):
 
 
 class PursuitRecommendation(BaseModel):
-    overall_fit_score: int = Field(ge=0, le=10)
-    confidence_score: int = Field(ge=0, le=10)
+    overall_fit_score: float = Field(ge=0, le=10)
+    confidence_score: float = Field(ge=0, le=10)
     recommendation: str  # pursue | pursue_selectively | low_priority | insufficient_information
     reasoning: list[str]
     ideal_candidate_profile: str
